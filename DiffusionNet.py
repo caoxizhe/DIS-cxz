@@ -1,4 +1,3 @@
-from typing import Dict, Tuple
 from tqdm import tqdm
 import torch
 import torch.nn as nn
@@ -6,10 +5,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import models, transforms
 from torchvision.utils import save_image, make_grid
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter
 import numpy as np
-from IPython.display import HTML
 from diffusion_utilities import *
 
 # 超参数
@@ -181,6 +177,7 @@ class DiffusionNet(nn.Module):
         super(DiffusionNet, self).__init__()
 
         self.VAEEncoder = VAEEncoder()
+        self.VAEEncoder_gt = VAEEncoder(input_channels=1)
         self.VAEDecoder = VAEDecoder()
         self.UNet = UNet()
 
@@ -189,7 +186,7 @@ class DiffusionNet(nn.Module):
         if training == True:
             # Encode the input image & ground truth
             latent_image = self.VAEEncoder(image)   # (batch, 64, 128, 128)
-            latent_gt = self.VAEEncoder(gt)        # (batch, 64, 128, 128)
+            latent_gt = self.VAEEncoder_gt(gt)        # (batch, 64, 128, 128)
 
             # add noise to the latent ground truth
             t = torch.randint(0, T, (latent_gt.shape[0],1))   # sample a random time step
@@ -208,8 +205,7 @@ class DiffusionNet(nn.Module):
             # pass the input image through the UNet
             out = self.UNet(x, t/T, latent_image_flat)
 
-            struc_loss = F.mse_loss(out, latent_gt)
-            return struc_loss
+            return out
 
         else:
             # Encode the input image
