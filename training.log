@@ -1,1 +1,3 @@
 INFO:root:before training, Mean F-measure: 0.0443, Max F-measure: 0.0667
+INFO:root:before training, Mean F-measure: 0.0469, Max F-measure: 0.0667
+INFO:root:Epoch [5/20], Mean F-measure: 0.0492, Max F-measure: 0.0667
