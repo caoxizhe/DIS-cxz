@@ -18,6 +18,9 @@ betas = (beta_end - beta_start) * torch.linspace(0, 1, T + 1) + beta_start
 alphas = 1 - betas
 alphas_cumprod = torch.cumprod(alphas, dim=0)  # 累积乘积
 
+# 检查是否有可用的GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # 定义添加噪声的函数
 def add_noise(x_0, t):
     """
@@ -26,8 +29,8 @@ def add_noise(x_0, t):
     :param t: 时间步 
     :return: 加噪后的图像和噪声
     """
-    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1)
-    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1)
+    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1).to(device)
+    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1).to(device)    
     
     # 生成随机噪声
     noise = torch.randn_like(x_0)
@@ -37,8 +40,8 @@ def add_noise(x_0, t):
     return x_t
 
 def denoise(x_t, t, pred_noise):
-    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1)
-    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1)
+    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1).to(device)
+    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1).to(device)
 
     mean = (x_t - pred_noise * sqrt_one_minus_alphas_cumprod_t) / sqrt_alphas_cumprod_t
     return mean
@@ -181,6 +184,9 @@ class DiffusionNet(nn.Module):
         self.VAEDecoder = VAEDecoder()
         self.UNet = UNet()
 
+        self.conv1 = nn.Conv2d(64, 32, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(32, 16, kernel_size=4, stride=2, padding=1)
+
     def forward(self, image, gt, training):
 
         if training == True:
@@ -189,18 +195,18 @@ class DiffusionNet(nn.Module):
             latent_gt = self.VAEEncoder_gt(gt)        # (batch, 64, 128, 128)
 
             # add noise to the latent ground truth
-            t = torch.randint(0, T, (latent_gt.shape[0],1))   # sample a random time step
+            t = torch.randint(0, T, (latent_gt.shape[0],1)).to(device)   # sample a random time step
              
             latent_gt_noisy = add_noise(latent_gt, t)
 
             # Concatenate the latent image and latent ground truth(channel-wise)
-            x = torch.cat([latent_image, latent_gt_noisy], dim=1)   # (batch, 128, 128, 128)
+            x = torch.cat([latent_image, latent_gt_noisy], dim=1).to(device)   # (batch, 128, 128, 128)
 
-            latent_image = nn.Conv2d(64, 32, kernel_size=4, stride=2, padding=1)(latent_image)  # (batch, 32, 64, 64)
-            latent_image = nn.Conv2d(32, 16, kernel_size=4, stride=2, padding=1)(latent_image)  # (batch, 16, 32, 32)
+            latent_image = self.conv1(latent_image)  # (batch, 32, 64, 64)
+            latent_image = self.conv2(latent_image)  # (batch, 16, 32, 32)
 
             # 展平空间维度
-            latent_image_flat = latent_image.flatten(start_dim=1)  #  (batch, 16*32*32)
+            latent_image_flat = latent_image.flatten(start_dim=1).to(device)  #  (batch, 16*32*32)
 
             # pass the input image through the UNet
             out = self.UNet(x, t/T, latent_image_flat)
@@ -215,15 +221,15 @@ class DiffusionNet(nn.Module):
             random_noise = torch.randn_like(latent_image)
 
             # Concatenate the latent image and latent ground truth(channel-wise)
-            x = torch.cat([latent_image, random_noise], dim=1)
+            x = torch.cat([latent_image, random_noise], dim=1).to(device)   # (batch, 128, 128, 128)
 
-            latent_image = nn.Conv2d(64, 32, kernel_size=4, stride=2, padding=1)(latent_image)  # (batch, 32, 64, 64)
-            latent_image = nn.Conv2d(32, 16, kernel_size=4, stride=2, padding=1)(latent_image)  # (batch, 16, 32, 32)
+            latent_image = self.conv1(latent_image)  # (batch, 32, 64, 64)
+            latent_image = self.conv2(latent_image)  # (batch, 16, 32, 32)
 
             # 展平空间维度
-            latent_image_flat = latent_image.flatten(start_dim=1)  #  (batch, 16*32*32)
+            latent_image_flat = latent_image.flatten(start_dim=1).to(device)  #  (batch, 16*32*32)
             
-            t = torch.full((latent_image.shape[0], 1), T)
+            t = torch.full((latent_image.shape[0], 1), T).to(device)   
         
             pred_noise = self.UNet(x, t/T, latent_image_flat)
 

@@ -6,6 +6,13 @@ import os
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
+import logging
+from saliency_metric import cal_fm
+
+logging.basicConfig(filename='training.log', level=logging.INFO)
+
+# 检查是否有可用的GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # 使用Dice Loss
@@ -21,7 +28,7 @@ class DiceLoss(nn.Module):
         dice = (2.0 * intersection + smooth) / (pred_flat.sum() + target_flat.sum() + smooth)
         return 1.0 - dice
 
-criterion = DiceLoss()
+criterion = DiceLoss().to(device)
 
 class DIS5KDataset(Dataset):
     def __init__(self, root_dir, phase, transform=None):
@@ -80,10 +87,12 @@ valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-VD', transform=transf
 # 创建数据加载器
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 valid_loader = DataLoader(valid_dataset, batch_size=32, shuffle=False)
+num_valid_batches = len(valid_loader)
+num_train_batches = len(train_loader)
 
 
 # 定义模型
-model = DiffusionNet()  
+model = DiffusionNet().to(device) 
 
 # 定义优化器
 optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -91,6 +100,27 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 # 定义学习率调度器
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
+print("validation_before_training")
+model.eval()
+        
+with torch.no_grad():
+    cal_fm_instance = cal_fm(num_valid_batches)
+
+    for i, (image, gt) in enumerate(valid_loader):
+
+        # 计算并输出当前进度百分比
+        progress = (i + 1) / num_valid_batches * 100
+        print(f"Batch [{i+1}/{num_valid_batches}], Progress: {progress:.2f}%")
+
+        image, gt = image.to(device), gt.to(device)
+
+        output = model(image, gt=None, training=False)
+        cal_fm_instance.update(gt, output)
+            
+    cal_fm_instance.compute_fmeasure()
+    meanF, maxF = cal_fm_instance.get_results()
+
+    logging.info(f'before training, Mean F-measure: {meanF.mean():.4f}, Max F-measure: {maxF.mean():.4f}')
 
 # 训练循环
 num_epochs = 20
@@ -102,6 +132,8 @@ for epoch in range(num_epochs):
     running_loss = 0.0
 
     for i, (image, gt) in enumerate(train_loader):
+
+        image, gt = image.to(device), gt.to(device)
         optimizer.zero_grad()
 
         # 前向传播
@@ -114,8 +146,12 @@ for epoch in range(num_epochs):
 
         running_loss += loss.item()
 
+        # 计算并输出当前训练进度百分比
+        progress = (i + 1) / len(train_loader) * 100
+        print(f"Epoch [{epoch+1}/{num_epochs}], Batch [{i+1}/{num_train_batches}], Progress: {progress:.2f}%")
+
         if i % 10 == 9:  # 每10个batch打印一次损失
-            print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{i + 1}/{len(train_loader)}], Loss: {running_loss / 10:.4f}')
+            print(f'Epoch [{epoch + 1}/{num_epochs}], Batch [{i + 1}/{num_train_batches}], Loss: {running_loss / 10:.4f}')
             running_loss = 0.0
 
     # 每save_interval个epoch保存一次模型
@@ -125,15 +161,26 @@ for epoch in range(num_epochs):
 
     # 验证模型
     if (epoch + 1) % valid_interval == 0:
+        print("validation_epoch_start")
         model.eval()
-        valid_loss = 0.0
+        
         with torch.no_grad():
-            for image, gt in valid_loader:
-                output = model(image)
-                loss = criterion(output, gt)
-                valid_loss += loss.item()
+            cal_fm_instance = cal_fm(num_valid_batches)
 
-        print(f'Validation Loss: {valid_loss / len(valid_loader):.4f}')
+            for i, (image, gt) in enumerate(valid_loader):
+
+                # 计算并输出当前进度百分比
+                progress = (i + 1) / num_valid_batches * 100
+                print(f"Batch [{i+1}/{num_valid_batches}], Progress: {progress:.2f}%")
+
+                image, gt = image.to(device), gt.to(device)
+                output = model(image, gt=None, training=False)
+                cal_fm_instance.update(gt, output)
+            
+            cal_fm_instance.compute_fmeasure()
+            meanF, maxF = cal_fm_instance.get_results()
+
+            logging.info(f'Epoch [{epoch + 1}/{num_epochs}], Mean F-measure: {meanF.mean():.4f}, Max F-measure: {maxF.mean():.4f}')
     
     # 更新学习率
     scheduler.step()
