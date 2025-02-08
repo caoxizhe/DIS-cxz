@@ -17,21 +17,15 @@ logging.basicConfig(filename='training.log', level=logging.INFO)
 # 检查是否有可用的GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# 使用Dice Loss
-class DiceLoss(nn.Module):
+# 定义损失函数
+class MSELoss(nn.Module):
     def __init__(self):
-        super(DiceLoss, self).__init__()
+        super(MSELoss, self).__init__()
 
-    def forward(self, pred, target):
-        smooth = 1.0
-        pred_flat = pred.view(-1)
-        target_flat = target.view(-1)
-        intersection = (pred_flat * target_flat).sum()
-        dice = (2.0 * intersection + smooth) / (pred_flat.sum() + target_flat.sum() + smooth)
-        return 1.0 - dice
+    def forward(self, input, target):
+        return torch.mean((input - target) ** 2)
 
-criterion = DiceLoss().to(device)
+criterion = MSELoss().to(device)
 
 class DIS5KDataset(Dataset):
     def __init__(self, root_dir, phase, transform=None):
@@ -157,8 +151,8 @@ def train(start_epoch=0):
             optimizer.zero_grad()
 
             # 前向传播
-            output = model(image, gt, training=True)
-            loss = criterion(output, gt)
+            output, latent_gt = model(image, gt, training=True)
+            loss = criterion(output, latent_gt)
 
             # 反向传播和优化
             loss.backward()

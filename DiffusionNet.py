@@ -44,7 +44,7 @@ def add_noise(x_0, t):
 
 def denoise(x_t, t, pred_noise):
 
-    x_t, pred_noise = x_t.to("cuda:0"), pred_noise.to("cuda:0")
+    x_t, t, pred_noise = x_t.to("cuda:0"), t.to("cuda:0"), pred_noise.to("cuda:0")
 
     sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1)
     sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1)
@@ -215,9 +215,11 @@ class DiffusionNet(nn.Module):
             latent_image_flat = latent_image.flatten(start_dim=1).to(device)  #  (batch, 16*32*32)
 
             # pass the input image through the UNet
-            out = self.UNet(x, t/T, latent_image_flat)
+            pred_noise = self.UNet(x, t/T, latent_image_flat)
 
-            return out
+            out = denoise(latent_gt_noisy, t, pred_noise).to(device)
+
+            return out, latent_gt
 
         else:
             # Encode the input image
@@ -240,7 +242,7 @@ class DiffusionNet(nn.Module):
             pred_noise = self.UNet(x, t/T, latent_image_flat)
 
             # denoise the image
-            out = denoise(random_noise, T, pred_noise).to(device)
+            out = denoise(random_noise, t, pred_noise).to(device)
 
             # Decode the output
             output = self.VAEDecoder(out)
