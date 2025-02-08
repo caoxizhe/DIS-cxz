@@ -219,7 +219,9 @@ class DiffusionNet(nn.Module):
 
             out = denoise(latent_gt_noisy, t, pred_noise).to(device)
 
-            return out, latent_gt
+            output = self.VAEDecoder(out)
+
+            return output
 
         else:
             # Encode the input image

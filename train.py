@@ -68,7 +68,7 @@ train_transform = transforms.Compose([
     transforms.Normalize(mean=[0.5], std=[0.5])  # 归一化
 ])
 
-transform = transforms.Compose([
+valid_transform = transforms.Compose([
     transforms.Resize((1024, 1024)),  # 调整图像大小
     transforms.ToTensor(),  # 转换为Tensor
     transforms.Normalize(mean=[0.5], std=[0.5])  # 归一化
@@ -79,7 +79,7 @@ root_dir = '/data/caoxizhe/MVANet_cxz/data/DIS5K'  # DIS5K 数据集路径
 
 # 创建数据集实例
 train_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-TR', transform=train_transform)
-valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-VD', transform=transform)
+valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-VD', transform=valid_transform)
 
 # 创建数据加载器
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
@@ -151,8 +151,8 @@ def train(start_epoch=0):
             optimizer.zero_grad()
 
             # 前向传播
-            output, latent_gt = model(image, gt, training=True)
-            loss = criterion(output, latent_gt)
+            output = model(image, gt, training=True)
+            loss = criterion(output, gt)
 
             # 反向传播和优化
             loss.backward()
