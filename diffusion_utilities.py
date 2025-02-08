@@ -1,3 +1,5 @@
+# 此部分来源于DeepLearningAI: how diffusion model works课程代码
+
 import torch
 import torch.nn as nn
 import numpy as np

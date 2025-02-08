@@ -42,7 +42,15 @@ def add_noise(x_0, t):
     x_t = sqrt_alphas_cumprod_t * x_0 + sqrt_one_minus_alphas_cumprod_t * noise
     return x_t
 
+# 定义去除噪声的函数
 def denoise(x_t, t, pred_noise):
+    """
+    去除输入图像 x_t 的噪声
+    :param x_t: 加噪后的图像 (batch_size, channels, height, width)
+    :param t: 时间步
+    :param pred_noise: 预测的噪声 (batch_size, channels, height, width)
+    :return: 去噪后的图像
+    """
 
     x_t, t, pred_noise = x_t.to("cuda:0"), t.to("cuda:0"), pred_noise.to("cuda:0")
 
@@ -110,7 +118,7 @@ class VAEDecoder(nn.Module):
         
         return x
 
-# UNet 模型
+# UNet 模型,此部分参照DeepLearningAI: how diffusion model works课程代码的框架
 class UNet(nn.Module):
     def __init__(self, in_channels=128, n_feat=256, image_size=128):
         super(UNet, self).__init__()
@@ -194,6 +202,15 @@ class DiffusionNet(nn.Module):
         self.conv2 = nn.Conv2d(32, 16, kernel_size=4, stride=2, padding=1)
 
     def forward(self, image, gt, training):
+        '''
+        具体pipeline如下:
+        1. Encode the input image & ground truth
+        2. add noise to the latent ground truth
+        3. Concatenate the latent image and latent ground truth(channel-wise)
+        4. pass the input image through the UNet, together with time step and latent image embedding(similar to context embedding in diffusion model)
+        5. denoise the image
+        6. Decode the output
+        '''
 
         if training == True:
             # Encode the input image & ground truth
