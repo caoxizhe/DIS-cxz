@@ -96,7 +96,7 @@ model = nn.DataParallel(model)
 
 
 # 定义优化器
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=1e-5)
 
 # 定义学习率调度器
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
