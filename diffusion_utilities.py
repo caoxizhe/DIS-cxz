@@ -101,6 +101,27 @@ class UnetUp(nn.Module):
         x = self.model(x)
         return x
 
+class ZeroConv(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=True):
+        super().__init__()
+        self.conv = nn.Conv2d(
+            in_channels, out_channels, 
+            kernel_size=kernel_size, 
+            stride=stride, 
+            padding=padding, 
+            bias=bias
+        )
+        self.reset_parameters()  # 将卷积参数全部置0
+
+    def reset_parameters(self):
+        # 将卷积核权重和偏置初始化为0
+        with torch.no_grad():
+            self.conv.weight.zero_()
+            if self.conv.bias is not None:
+                self.conv.bias.zero_()
+
+    def forward(self, x):
+        return self.conv(x)
     
 class UnetDown(nn.Module):
     def __init__(self, in_channels, out_channels):

@@ -63,14 +63,14 @@ valid_transform = transforms.Compose([
 root_dir = 'data/DIS5K'  # DIS5K 数据集路径
 
 # 创建数据集实例
-#train_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-debug', transform=train_transform)
-train_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-TR', transform=train_transform)
-#valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-debug', transform=valid_transform)
-valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-VD', transform=valid_transform)
+train_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-debug', transform=train_transform)
+#train_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-TR', transform=train_transform)
+valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-debug', transform=valid_transform)
+#valid_dataset = DIS5KDataset(root_dir=root_dir, phase='DIS-VD', transform=valid_transform)
 
 # 创建数据加载器
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=False,num_workers=16)
-valid_loader = DataLoader(valid_dataset, batch_size=16, shuffle=False ,num_workers=16)
+train_loader = DataLoader(train_dataset, batch_size=1, shuffle=False,num_workers=16)
+valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False ,num_workers=16)
 num_valid_batches = len(valid_loader)
 num_train_batches = len(train_loader)
 
@@ -85,8 +85,8 @@ model = DiffusionNet().to(device)
 model = nn.DataParallel(model)
 
 
-warmup_epochs = 3
-total_epochs  = 100
+warmup_epochs = 500
+total_epochs  = 10000
 learning_rate = 2e-3
 
 # 定义优化器
@@ -121,9 +121,9 @@ def load_checkpoint(model, optimizer, scheduler, filename='checkpoint.pth'):
 
 def train(start_epoch=0 , num_epochs=10000):
     # 训练循环
-    save_interval = 5  # 每5个epoch保存一次模型
-    valid_interval = 5  # 每5个epoch验证一次
-    loss_print_interval = 1  # 每个batch打印一次loss
+    save_interval = 200  # 每5个epoch保存一次模型
+    valid_interval = 200  # 每5个epoch验证一次
+    loss_print_interval = 5  # 每个batch打印一次loss
 
 
     for epoch in range(num_epochs):
@@ -158,7 +158,7 @@ def train(start_epoch=0 , num_epochs=10000):
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict(),
-            }, f'weights/checkpoint_epoch_{epoch + 1}.pth')
+            }, f'weights_debug/checkpoint_epoch_{epoch + 1}.pth')
 
             print(f'Model saved at epoch {epoch + 1}')
 
