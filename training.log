@@ -1,8 +1,0 @@
-INFO:root:before training, Mean F-measure: 0.0443, Max F-measure: 0.0667
-INFO:root:before training, Mean F-measure: 0.0469, Max F-measure: 0.0667
-INFO:root:Epoch [5/20], Mean F-measure: 0.0492, Max F-measure: 0.0667
-INFO:root:Epoch [10/20], Mean F-measure: 0.0494, Max F-measure: 0.0667
-INFO:root:Epoch [15/20], Mean F-measure: 0.0490, Max F-measure: 0.0667
-INFO:root:Epoch [20/20], Mean F-measure: 0.0494, Max F-measure: 0.0667
-INFO:root:Epoch [5/20], Mean F-measure: 0.0038, Max F-measure: 0.0667
-INFO:root:Epoch [5/20], Mean F-measure: 0.0367, Max F-measure: 0.0667

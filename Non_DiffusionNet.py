@@ -11,55 +11,6 @@ import cv2
 # 检查是否有可用的GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# 超参数
-T = 1000  # 扩散步数
-beta_start = 1e-4 # 噪声调度起始值
-beta_end = 2e-2  # 噪声调度结束值
-
-# 定义噪声调度(线性调度)
-betas = (beta_end - beta_start) * torch.linspace(0, 1, T) + beta_start
-alphas = 1 - betas
-alphas_cumprod = torch.cumprod(alphas, dim=0).to(device)  # 累积乘积
-
-# 定义添加噪声的函数
-def add_noise(x_0, t):
-    """
-    为输入图像 x_0 添加噪声
-    :param x_0: 原始图像 (batch_size, channels, height, width)
-    :param t: 时间步 
-    :return: 加噪后的图像和噪声
-    """
-
-    x_0, t = x_0.to("cuda:0"), t.to("cuda:0")
-    
-    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1)
-    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1)   
-    
-    # 生成随机噪声
-    noise = torch.randn_like(x_0)
-    
-    # 加噪公式:
-    x_t = sqrt_alphas_cumprod_t * x_0 + sqrt_one_minus_alphas_cumprod_t * noise
-    return x_t, noise
-
-# 定义去除噪声的函数
-def denoise(x_t, t, pred_noise):
-    """
-    去除输入图像 x_t 的噪声
-    :param x_t: 加噪后的图像 (batch_size, channels, height, width)
-    :param t: 时间步
-    :param pred_noise: 预测的噪声 (batch_size, channels, height, width)
-    :return: 去噪后的图像
-    """
-
-    x_t, t, pred_noise = x_t.to("cuda:0"), t.to("cuda:0"), pred_noise.to("cuda:0")
-
-    sqrt_alphas_cumprod_t = torch.sqrt(alphas_cumprod[t]).view(-1, 1, 1, 1)
-    sqrt_one_minus_alphas_cumprod_t = torch.sqrt(1 - alphas_cumprod[t]).view(-1, 1, 1, 1)
-
-    mean = (x_t - pred_noise * sqrt_one_minus_alphas_cumprod_t) / sqrt_alphas_cumprod_t
-    return mean
-
 # 定义边缘损失函数
 def edge_loss(pred, target):
     """
@@ -85,19 +36,6 @@ def edge_loss(pred, target):
     target_edges = torch.stack(target_edges).unsqueeze(1)
     
     return F.mse_loss(pred_edges, target_edges)
-
-
-class TimestepEmbedder(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(1, dim),
-            nn.SiLU(),
-            nn.Linear(dim, dim)
-        )
-
-    def forward(self, t):
-        return self.mlp(t.view(-1, 1))
 
 
 class CrossAttention(nn.Module):
@@ -132,7 +70,7 @@ class CrossAttention(nn.Module):
 
 # UNet 模型,此部分参照DeepLearningAI: how diffusion model works课程代码的框架
 class UNet(nn.Module):
-    def __init__(self, in_channels=8, n_feat=256, image_size=64):
+    def __init__(self, in_channels=4, n_feat=256, image_size=64):
         super(UNet, self).__init__()
 
         self.in_channels = in_channels
@@ -152,7 +90,7 @@ class UNet(nn.Module):
         self.CrossAttention4 = CrossAttention(n_feat, n_feat)
   
 
-        self.cond_down1 = ResidualConvBlock(in_channels // 2, n_feat, is_res=True)
+        self.cond_down1 = ResidualConvBlock(in_channels, n_feat, is_res=True)
         self.cond_down2 = UnetDown(n_feat, n_feat)
         self.cond_down3 = UnetDown(n_feat, 2 * n_feat)
 
@@ -165,9 +103,6 @@ class UNet(nn.Module):
         self.cond_down_zeroconv_3_1 = nn.Conv2d(2 * n_feat , 2 * n_feat , 1 , 1, 0)  
 
         self.to_vec = nn.Sequential(nn.AvgPool2d((2)), nn.GELU())
-        
-        self.timeembed1 = TimestepEmbedder(n_feat * 2)
-        self.timeembed2 = TimestepEmbedder(n_feat)
 
         # Initialize the up-sampling path of the U-Net with three levels
         self.up0 = nn.Sequential(
@@ -183,49 +118,46 @@ class UNet(nn.Module):
             nn.Conv2d(2 * n_feat, n_feat, 3, 1, 1), 
             nn.GroupNorm(8, n_feat), # normalize
             nn.ReLU(),
-            nn.Conv2d(n_feat, self.in_channels//2, 3, 1, 1), # map to same number of channels as input
+            nn.Conv2d(n_feat, self.in_channels, 3, 1, 1), # map to same number of channels as input
         )
 
-    def forward(self, image, t, latent_image):
+    def forward(self, image):
         """
-        image : (batch, 8, 64, 64) : input image
+        image : (batch, 4, 64, 64) : input image
         t : (batch, 1) : time step
-        latent_image : (batch, 4, 64, 64) : latent image
         """
     
         # pass the input image through the initial convolutional layer
         x = self.init_conv(image)   # [1, n_feat, 64, 64]
         # pass the result through the down-sampling path
-        t_embed1 = self.timeembed1(t)  # [1, n_feat * 2]
-        t_embed2 = self.timeembed2(t)  # [1, n_feat]
 
         down1 = self.down1(x)       #[1, n_feat, 32, 32]
-        down1 = self.CrossAttention1(down1, latent_image) + t_embed2.unsqueeze(-1).unsqueeze(-1) # [1, n_feat, 32, 32]
+        down1 = self.CrossAttention1(down1, image)  # [1, n_feat, 32, 32]
         down2 = self.down2(down1)   #[1, n_feat * 2, 16, 16]
-        down2 = self.CrossAttention2(down2, latent_image) + t_embed1.unsqueeze(-1).unsqueeze(-1) # [1, n_feat * 2, 16, 16]
+        down2 = self.CrossAttention2(down2, image)  # [1, n_feat * 2, 16, 16]
         
         # convert the feature maps to a vector and apply an activation
         hiddenvec = self.to_vec(down2)  # [1, n_feat * 2, 8, 8]
 
-        cond_down1 = self.cond_down1(latent_image)  # [1, n_feat, 64, 64]
+        cond_down1 = self.cond_down1(image)  # [1, n_feat, 64, 64]
         cond_down2 = self.cond_down2(cond_down1)    # [1, n_feat * 2, 32, 32]
         cond_down3 = self.cond_down3(cond_down2)    # [1, n_feat * 2, 16, 16]
 
 
         up1 = self.up0(hiddenvec)   # [1, n_feat * 2, 16, 16]
-        up1 = self.CrossAttention3(up1, self.cond_down_zeroconv_3_0(cond_down3)) + t_embed1.unsqueeze(-1).unsqueeze(-1) + self.cond_down_zeroconv_3_1(cond_down3)   # [1, n_feat * 2, 16, 16]
+        up1 = self.CrossAttention3(up1, self.cond_down_zeroconv_3_0(cond_down3)) + self.cond_down_zeroconv_3_1(cond_down3)   # [1, n_feat * 2, 16, 16]
 
         up2 = self.up1(up1, down2)  # [1, n_feat, 32, 32]
-        up2 = self.CrossAttention4(up2, self.cond_down_zeroconv_2_0(cond_down2)) + t_embed2.unsqueeze(-1).unsqueeze(-1) + self.cond_down_zeroconv_2_1(cond_down2)   # [1, n_feat, 32, 32]
+        up2 = self.CrossAttention4(up2, self.cond_down_zeroconv_2_0(cond_down2)) + self.cond_down_zeroconv_2_1(cond_down2)   # [1, n_feat, 32, 32]
 
         up3 = self.up2(up2, down1) * self.cond_down_zeroconv_1_0(cond_down1) + self.cond_down_zeroconv_1_1(cond_down1)    # [1, 4, 64, 64]
 
         out = self.out(torch.cat((up3, x), 1))  # [1, 4, 64, 64]
         return out
 
-class DiffusionNet(nn.Module):
+class Non_DiffusionNet(nn.Module):
     def __init__(self):  
-        super(DiffusionNet, self).__init__()
+        super(Non_DiffusionNet, self).__init__()
 
         self.vae = AutoencoderKL.from_pretrained(
             "/data/caoxizhe/pretrained_vae", 
@@ -240,13 +172,13 @@ class DiffusionNet(nn.Module):
         self.UNet = UNet()
 
 
-    def loss(self, pred_noise, noise, pred_mask, mask):
+    def loss(self, pred_mask, mask):
         """
         pred_noise : (batch, 4, 64, 64) : predicted noise
         noise : (batch, 4, 64, 64) : ground truth noise
         """
         # 计算损失
-        loss = F.mse_loss(pred_noise, noise) + 20 * edge_loss(pred_mask, mask)
+        loss = F.mse_loss(pred_mask, mask) + 20 * edge_loss(pred_mask, mask)
 
         return loss
 
@@ -266,53 +198,26 @@ class DiffusionNet(nn.Module):
         if training == True:
         
             with torch.no_grad():
+
                 gt = gt.repeat(1, 3, 1, 1)  # shape [b, 3, 512, 512]
-
+                
                 latent_image = self.vae.encode(image).latent_dist.mean.to(device)  # shape [b, 4, 64, 64]
-            
+
                 latent_gt = self.vae.encode(gt).latent_dist.mean.to(device)  # shape [b, 4, 64, 64]
-            
-                t = torch.ones(latent_gt.shape[0], 1, dtype=int).to(device) * (T-1)  # shape [b, 1]
 
-                latent_gt_noisy, noise = add_noise(latent_gt, t)  # shape [b, 4, 64, 64]
-                latent_gt_noisy = latent_gt_noisy.to(device)
-                noise = noise.to(device)
+            pred_gt = self.UNet(latent_image).to(device) # shape [b, 4, 64, 64]
 
-                x = torch.cat([latent_image, latent_gt_noisy], dim=1).to(device) # shape [b, 8, 64, 64]  
-
-            pred_noise = self.UNet(x, t/T, latent_image).to(device) # shape [b, 4, 64, 64]
-
-            pred_mask = denoise(latent_gt_noisy, t, pred_noise).to(device)
-
-            loss = self.loss(pred_noise, noise, pred_mask, latent_gt)
+            loss = self.loss(pred_gt, latent_gt)
 
             return loss
 
         else:
-            with torch.no_grad():
-
-                gt = image.mean(dim=1, keepdim=True)  # shape [b, 1, 512, 512]
-
-                gt = gt.repeat(1, 3, 1, 1)  # shape [b, 3, 512, 512]
-
-                latent_image = self.vae.encode(image).latent_dist.mean.to(device)  # shape [b, 4, 64, 64]
-
-                latent_gt = self.vae.encode(gt).latent_dist.mean.to(device)  # shape [b, 4, 64, 64]
-
-                t = torch.ones(latent_image.shape[0], 1, dtype=int).to(device) * (400)
             
-                random_noise = add_noise(latent_gt, t)[0].to(device)  # shape [b, 4, 64, 64]
+            latent_image = self.vae.encode(image).latent_dist.mean.to(device)  # shape [b, 4, 64, 64]
 
-                for t0 in reversed(range(10)):
-                    t = torch.ones(latent_image.shape[0], 1, dtype=int).to(device) * t0  # shape [b, 1]
+            pred_gt = self.UNet(latent_image).to(device) # shape [b, 4, 64, 64]
 
-                    x = torch.cat([latent_image, random_noise], dim=1).to(device) # shape [b, 8, 64, 64]  
-
-                    pred_noise = self.UNet(x, t/T, latent_image).to(device) # shape [b, 4, 64, 64]
-
-                    random_noise = denoise(random_noise, t, pred_noise).to(device)
-
-            batched_mask_3_ch = self.vae.decode(random_noise).sample
+            batched_mask_3_ch = self.vae.decode(pred_gt).sample
             # 3 to 1
             batched_mask = torch.mean(batched_mask_3_ch, dim=1, keepdim=True)   # shape [b, 1, 512, 512]
             return batched_mask

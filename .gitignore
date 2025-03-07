@@ -2,3 +2,10 @@ training.log
 *.pth
 __pycache__/
 generated_images/
+middle_output_images/
+noisy_images/
+valid_output_images/
+checkpoints/
+*.txt
+test_add_noise.py
+Non_Diffusion.py
