@@ -8,4 +8,4 @@ valid_output_images/
 checkpoints/
 *.txt
 test_add_noise.py
-Non_Diffusion.py
+Non_DiffusionNet.py
